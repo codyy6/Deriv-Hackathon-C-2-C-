@@ -4,32 +4,45 @@ import io
 from fpdf import FPDF
 from zapv2 import ZAPv2
 import time
+from dotenv import load_dotenv
+import os
+import requests
+import validators
 
-ZAP_URI = st.secrets["OWASP"]["uri_key"]
-ZAP_API_KEY = st.secrets["OWASP"]["api_key"]
+requests.packages.urllib3.disable_warnings()  # Suppress SSL warnings
 
-data = {
-            'Vulnerability': ['Vuln 1', 'Vuln 2', 'Vuln 3'],
-            'Risk': ['Critical', 'High', 'Medium'],
-            'Recommendation': ['Fix 1', 'Fix 2', 'Fix 3']
-        }
-
-def init_connection():
-    return ZAPv2(apikey=ZAP_API_KEY, proxies={'http': ZAP_URI, 'https': ZAP_URI})
+load_dotenv()
+ZAP_API_KEY = os.getenv("ZAP_API_KEY") 
 
 def get_zap_vulnerabilities(target):
-    session = init_connection()
-    scanID = session.ascan.scan(target)
-    while int(session.ascan.status(scanID)) < 100:
-        print('Scan progress %: {}'.format(session.ascan.status(scanID)))
-        time.sleep(5)
-        
-    return session.core.alerts(baseurl=target)
+    if not validators.url(target):
+        st.error("The provided target is not a valid URL.")
+        return None
 
-def save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data):
+    try:
+        zap = ZAPv2(apikey=ZAP_API_KEY, proxies={'http': 'http://localhost:8080', 'https': 'http://localhost:8080'})
+        scanID = zap.ascan.scan(target)
+        progress_bar = st.progress(0)
+        progress_text = st.empty()
+        while int(zap.ascan.status(scanID)) < 100:
+            progress = int(zap.ascan.status(scanID))
+            progress_bar.progress(progress / 100.0)
+            progress_text.text(f"Scan progress: {progress}%")
+            time.sleep(5)
+        progress_text.text("Scan complete!")
+        return zap.core.alerts(baseurl=target)
+    except requests.exceptions.ProxyError as e:
+        st.error(f"Failed to connect to ZAP proxy: {e}")
+        return None
+
+def save_reports_to_pdf(threat_data, pentest_data, user_input):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
+
+    # Add the user input (target link) to the top of the PDF
+    pdf.cell(200, 10, txt=f"Target: {user_input}", ln=True, align='C')
+    pdf.ln(10)
 
     def add_table_to_pdf(title, data):
         pdf.cell(200, 10, txt=title, ln=True, align='C')
@@ -46,10 +59,6 @@ def save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data):
     add_table_to_pdf("Threat Scanning Results", threat_data)
     if pentest_data:
         add_table_to_pdf("Pentest Report", pentest_data)
-    if grc_data:
-        add_table_to_pdf("GRC Compliance Report", grc_data)
-    if ra_data:
-        add_table_to_pdf("RA Documentation Report", ra_data)
 
     pdf_output = io.BytesIO()
     pdf_output.write(pdf.output(dest='S').encode('latin1'))
@@ -70,56 +79,53 @@ def threat_scanning(vulnerability_response):
             unsafe_allow_html=True
         )
         st.dataframe(df, hide_index=True, use_container_width=True)
+        
+        # Create a bar chart for the number of each type of alert
+        alert_counts = df['Alert'].value_counts()
+        st.bar_chart(alert_counts)
 
-def pentest_report():
+def pentest_report(data):
     with st.expander("Pentest Report"):
         df = pd.DataFrame(data)
         st.dataframe(df, hide_index=True, use_container_width=True)
     
-def grc_compliance_report(data):
-    with st.expander("GRC Compliance Report"):
-        df = pd.DataFrame(data)
-        st.dataframe(df, hide_index=True, use_container_width=True)
 
-def ra_doc_report(data):
-    with st.expander("RA Documentation Report"):
-        df = pd.DataFrame(data)
-        st.dataframe(df, hide_index=True, use_container_width=True)
+def main():
 
-st.title('C^2+C, Threat Scanning')    
+    st.title('C^2+C, Threat Scanning')    
 
-user_input = st.text_input('Enter IP or Port Here:')
+    user_input = st.text_input('Enter IP or Port Here:')
 
-pentest = st.checkbox('Pentest')
-grc_compliance = st.checkbox('GRC Compliance')
-ra_doc = st.checkbox('RA Doc')
+    pentest = st.checkbox('Pentest')
+    # grc_compliance = st.checkbox('GRC Compliance')
+    # ra_doc = st.checkbox('RA Doc')
 
-if st.button('Submit'):
-    st.markdown("---")
-    
-    vulnerability_scanning = get_zap_vulnerabilities(user_input)
-    if vulnerability_scanning:
-        threat_scanning(vulnerability_scanning)
-    
-    pentest_data = None
-    grc_data = None
-    ra_data = None
-    
-    if pentest:
-        pentest_report()
-    
-    if grc_compliance:
-        grc_compliance_report(vulnerability_scanning)
-    
-    if ra_doc:
-        ra_doc_report(vulnerability_scanning)
-    
-    pdf_output = save_reports_to_pdf(vulnerability_scanning, pentest_data, grc_data, ra_data)
-    st.download_button(label="Download Report as PDF", data=pdf_output, file_name="report.pdf", mime="application/pdf")
-    
-    try:
-        client = init_connection()
-        if client:
-            st.success("Connected to database successfully!")
-    except Exception as e:
-        st.error(f"Database connection error: {e}")
+    if st.button('Submit'):
+        st.markdown("---")
+        
+        vulnerability_scanning_result = get_zap_vulnerabilities(user_input)
+
+        if vulnerability_scanning_result:
+            simplified_results = {
+            "Alert": [item['alert'] for item in vulnerability_scanning_result],
+            "Suggestions": [item['solution'] for item in vulnerability_scanning_result]
+            }
+            threat_scanning(simplified_results)
+            
+            pentest_data = None
+            if pentest:
+                pentest_report(simplified_results)
+                
+            pdf_output = save_reports_to_pdf(simplified_results, pentest_data, user_input)
+            st.download_button(label="Download Report as PDF", data=pdf_output, file_name="report.pdf", mime="application/pdf")
+        else:
+            st.write("No vulnerabilities found!")
+            simplified_results = {
+                "Alert": ["No vulnerabilities found"],
+                "Suggestions": ["N/A"]
+            }
+            pdf_output = save_reports_to_pdf(simplified_results, None, user_input)
+            st.download_button(label="Download Report as PDF", data=pdf_output, file_name="report.pdf", mime="application/pdf")
+            
+if __name__ == "__main__":
+    main()
