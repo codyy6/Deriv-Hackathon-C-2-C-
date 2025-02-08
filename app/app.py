@@ -2,6 +2,29 @@ import streamlit as st
 import pandas as pd
 import io
 from fpdf import FPDF
+from zapv2 import ZAPv2
+import time
+
+ZAP_URI = st.secrets["OWASP"]["uri_key"]
+ZAP_API_KEY = st.secrets["OWASP"]["api_key"]
+
+data = {
+            'Vulnerability': ['Vuln 1', 'Vuln 2', 'Vuln 3'],
+            'Risk': ['Critical', 'High', 'Medium'],
+            'Recommendation': ['Fix 1', 'Fix 2', 'Fix 3']
+        }
+
+def init_connection():
+    return ZAPv2(apikey=ZAP_API_KEY, proxies={'http': ZAP_URI, 'https': ZAP_URI})
+
+def get_zap_vulnerabilities(target):
+    session = init_connection()
+    scanID = session.ascan.scan(target)
+    while int(session.ascan.status(scanID)) < 100:
+        print('Scan progress %: {}'.format(session.ascan.status(scanID)))
+        time.sleep(5)
+        
+    return session.core.alerts(baseurl=target)
 
 def save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data):
     pdf = FPDF()
@@ -29,14 +52,12 @@ def save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data):
         add_table_to_pdf("RA Documentation Report", ra_data)
 
     pdf_output = io.BytesIO()
-    pdf.output(dest='S').encode('latin1')
     pdf_output.write(pdf.output(dest='S').encode('latin1'))
     pdf_output.seek(0)
     return pdf_output
 
 def threat_scanning(vulnerability_response):   
     with st.expander("Threat Scanning Results"):
-        
         df = pd.DataFrame(vulnerability_response)
         st.markdown(
             """
@@ -48,16 +69,10 @@ def threat_scanning(vulnerability_response):
             """,
             unsafe_allow_html=True
         )
-        print(df)
         st.dataframe(df, hide_index=True, use_container_width=True)
 
 def pentest_report():
     with st.expander("Pentest Report"):
-        data = {
-            'Vulnerability': ['Vuln 1', 'Vuln 2', 'Vuln 3'],
-            'Risk': ['Critical', 'High', 'Medium'],
-            'Recommendation': ['Fix 1', 'Fix 2', 'Fix 3']
-        }
         df = pd.DataFrame(data)
         st.dataframe(df, hide_index=True, use_container_width=True)
     
@@ -79,20 +94,16 @@ pentest = st.checkbox('Pentest')
 grc_compliance = st.checkbox('GRC Compliance')
 ra_doc = st.checkbox('RA Doc')
 
-
 if st.button('Submit'):
     st.markdown("---")
     
-    # some api calling using {user_input}
-    vulnerability_scanning = {
-        'Findings': ['Finding 1', 'Finding 2', 'Finding 3'],
-        'Severity': ['High', 'Medium', 'Low']
-    }
+    vulnerability_scanning = get_zap_vulnerabilities(user_input)
+    if vulnerability_scanning:
+        threat_scanning(vulnerability_scanning)
+    
     pentest_data = None
     grc_data = None
     ra_data = None
-    
-    threat_scanning(vulnerability_scanning)
     
     if pentest:
         pentest_report()
@@ -106,4 +117,9 @@ if st.button('Submit'):
     pdf_output = save_reports_to_pdf(vulnerability_scanning, pentest_data, grc_data, ra_data)
     st.download_button(label="Download Report as PDF", data=pdf_output, file_name="report.pdf", mime="application/pdf")
     
-    
+    try:
+        client = init_connection()
+        if client:
+            st.success("Connected to database successfully!")
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
