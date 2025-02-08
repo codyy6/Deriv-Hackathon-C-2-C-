@@ -34,14 +34,10 @@ def save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data):
     pdf_output.seek(0)
     return pdf_output
 
-def threat_scanning(user_input):   
+def threat_scanning(vulnerability_response):   
     with st.expander("Threat Scanning Results"):
-        data = {
-            'Findings': ['Finding 1', 'Finding 2', 'Finding 3'],
-            'Severity': ['High', 'Medium', 'Low']
-        }
-
-        df = pd.DataFrame(data)
+        
+        df = pd.DataFrame(vulnerability_response)
         st.markdown(
             """
             <style>
@@ -65,23 +61,13 @@ def pentest_report():
         df = pd.DataFrame(data)
         st.dataframe(df, hide_index=True, use_container_width=True)
     
-def grc_compliance_report():
+def grc_compliance_report(data):
     with st.expander("GRC Compliance Report"):
-        data = {
-            'Control': ['Control 1', 'Control 2', 'Control 3'],
-            'Status': ['Compliant', 'Non-Compliant', 'Compliant'],
-            'Action Required': ['Action 1', 'Action 2', 'Action 3']
-        }
         df = pd.DataFrame(data)
         st.dataframe(df, hide_index=True, use_container_width=True)
 
-def ra_doc_report():
+def ra_doc_report(data):
     with st.expander("RA Documentation Report"):
-        data = {
-            'Risk': ['Risk 1', 'Risk 2', 'Risk 3'],
-            'Impact': ['High', 'Medium', 'Low'],
-            'Mitigation': ['Mitigation 1', 'Mitigation 2', 'Mitigation 3']
-        }
         df = pd.DataFrame(data)
         st.dataframe(df, hide_index=True, use_container_width=True)
 
@@ -96,40 +82,28 @@ ra_doc = st.checkbox('RA Doc')
 
 if st.button('Submit'):
     st.markdown("---")
-    threat_data = {
+    
+    # some api calling using {user_input}
+    vulnerability_scanning = {
         'Findings': ['Finding 1', 'Finding 2', 'Finding 3'],
         'Severity': ['High', 'Medium', 'Low']
     }
-    threat_scanning(user_input)
-    
     pentest_data = None
+    grc_data = None
+    ra_data = None
+    
+    threat_scanning(vulnerability_scanning)
+    
     if pentest:
-        pentest_data = {
-            'Vulnerability': ['Vuln 1', 'Vuln 2', 'Vuln 3'],
-            'Risk': ['Critical', 'High', 'Medium'],
-            'Recommendation': ['Fix 1', 'Fix 2', 'Fix 3']
-        }
         pentest_report()
     
-    grc_data = None
     if grc_compliance:
-        grc_data = {
-            'Control': ['Control 1', 'Control 2', 'Control 3'],
-            'Status': ['Compliant', 'Non-Compliant', 'Compliant'],
-            'Action Required': ['Action 1', 'Action 2', 'Action 3']
-        }
-        grc_compliance_report()
+        grc_compliance_report(vulnerability_scanning)
     
-    ra_data = None
     if ra_doc:
-        ra_data = {
-            'Risk': ['Risk 1', 'Risk 2', 'Risk 3'],
-            'Impact': ['High', 'Medium', 'Low'],
-            'Mitigation': ['Mitigation 1', 'Mitigation 2', 'Mitigation 3']
-        }
-        ra_doc_report()
+        ra_doc_report(vulnerability_scanning)
     
-    pdf_output = save_reports_to_pdf(threat_data, pentest_data, grc_data, ra_data)
+    pdf_output = save_reports_to_pdf(vulnerability_scanning, pentest_data, grc_data, ra_data)
     st.download_button(label="Download Report as PDF", data=pdf_output, file_name="report.pdf", mime="application/pdf")
     
     
