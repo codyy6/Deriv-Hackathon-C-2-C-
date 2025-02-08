@@ -107,8 +107,11 @@ def main():
 
         if vulnerability_scanning_result:
             simplified_results = {
-            "Alert": [item['alert'] for item in vulnerability_scanning_result],
-            "Suggestions": [item['solution'] for item in vulnerability_scanning_result]
+                "Alert": [item['alert'] for item in vulnerability_scanning_result],
+                "Risk": [item['risk'] for item in vulnerability_scanning_result],
+                "Confidence": [item['confidence'] for item in vulnerability_scanning_result],
+                "URL": [item['url'] for item in vulnerability_scanning_result],
+                "Suggestions": [item['solution'] for item in vulnerability_scanning_result]
             }
             threat_scanning(simplified_results)
             
